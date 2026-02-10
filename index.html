@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NanoBot Web Interface</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 NanoBot</h1>
+            <div class="subtitle">Personal Claude Assistant</div>
+        </div>
+
+        <div class="main-content">
+            <div class="sessions-sidebar">
+                <div class="sessions-header">
+                    <h3>Sessions</h3>
+                    <button class="new-session-btn" onclick="createNewSession()">+ New</button>
+                </div>
+                <div class="sessions-list" id="sessionsList"></div>
+            </div>
+
+            <div class="chat-area">
+                <div class="messages" id="messages">
+                    <div class="message assistant">
+                        Hi! I'm your NanoBot assistant. How can I help you today?
+                    </div>
+                </div>
+
+                <div class="status" id="status" style="display: none;"></div>
+
+                <div class="input-area">
+                    <textarea
+                        id="input"
+                        placeholder="Type your message here..."
+                        rows="3"
+                        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendMessage();}"
+                    ></textarea>
+                    <button onclick="sendMessage()" id="sendBtn">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
