@@ -7,11 +7,14 @@ const sessionsListDiv = document.getElementById('sessionsList');
 
 // Session Management
 function createNewSession() {
-    const sessionName = prompt('Enter session name:', `Session ${sessions.length + 1}`);
+    const sessionName = prompt('Enter session name (alphanumeric + hyphens only):', `session-${Date.now()}`);
     if (!sessionName) return;
 
+    // Sanitize session name
+    const sanitizedName = sessionName.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+
     const newSession = {
-        id: Date.now().toString(),
+        id: sanitizedName,
         name: sessionName,
         messages: [],
         createdAt: new Date().toISOString()
@@ -55,15 +58,8 @@ function switchToSession(sessionIdToSwitch) {
     // Save current session ID
     setCurrentSessionId(sessionIdToSwitch);
 
-    // Clear messages and load session messages
-    messagesDiv.innerHTML = '';
-    if (session.messages.length === 0) {
-        messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
-    } else {
-        session.messages.forEach(msg => {
-            addMessage(msg.type, msg.content, false);
-        });
-    }
+    // Load chat history from backend
+    loadChatHistory(sessionIdToSwitch);
 
     renderSessions();
 }
@@ -122,7 +118,7 @@ async function sendMessage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 message,
-                sessionId: currentSession.id // Use session ID directly
+                sessionId: currentSession.id
             })
         });
 
@@ -164,15 +160,78 @@ function hideStatus() {
     statusEl.style.display = 'none';
 }
 
-// Check API health
+// Check API health and load registered sessions
 async function checkHealth() {
     try {
         const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.health}`);
         if (!response.ok) {
             addMessage('error', 'API server is not responding');
+            return;
         }
+
+        // Load registered sessions from backend
+        await loadRegisteredSessions();
     } catch (err) {
         addMessage('error', 'Cannot connect to API server');
+    }
+}
+
+// Load registered sessions from backend
+async function loadRegisteredSessions() {
+    try {
+        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.sessions}`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (data.sessions && data.sessions.length > 0) {
+            // Merge backend sessions with local sessions
+            data.sessions.forEach(backendSession => {
+                const existingSession = sessions.find(s => s.id === backendSession.sessionId);
+                if (!existingSession) {
+                    sessions.push({
+                        id: backendSession.sessionId,
+                        name: backendSession.sessionId,
+                        messages: [],
+                        createdAt: backendSession.lastActivity,
+                        messageCount: backendSession.messageCount
+                    });
+                }
+            });
+            localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+            renderSessions();
+        }
+    } catch (err) {
+        console.error('Failed to load registered sessions:', err);
+    }
+}
+
+// Load chat history from backend
+async function loadChatHistory(sessionId) {
+    try {
+        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.history}?sessionId=${sessionId}`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (data.messages && data.messages.length > 0) {
+            const session = sessions.find(s => s.id === sessionId);
+            if (session) {
+                // Clear local messages and load from backend
+                session.messages = data.messages.map(msg => ({
+                    type: msg.sender === 'user' ? 'user' : 'assistant',
+                    content: msg.content,
+                    timestamp: msg.timestamp
+                }));
+                localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+
+                // Refresh messages display
+                messagesDiv.innerHTML = '';
+                session.messages.forEach(msg => {
+                    addMessage(msg.type, msg.content, false);
+                });
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load chat history:', err);
     }
 }
 
@@ -183,6 +242,12 @@ renderSessions();
 // If no sessions exist, create a default one
 if (sessions.length === 0) {
     createNewSession();
+} else {
+    // Load the current session's history from backend
+    const currentId = getCurrentSessionId();
+    if (currentId) {
+        loadChatHistory(currentId);
+    }
 }
 
 inputEl.focus();

@@ -7,6 +7,8 @@ const API_CONFIG = {
 
     endpoints: {
         message: '/api/message',
-        health: '/api/health'
+        health: '/api/health',
+        history: '/api/history',
+        sessions: '/api/sessions'
     }
 };
