@@ -4,7 +4,7 @@ Frontend độc lập cho NanoBot - Personal Claude Assistant
 
 ## Phiên bản
 
-**Frontend Version:** 2.0.0
+**Frontend Version:** 2.0.1
 **API Version:** 2.0.0
 **Last Updated:** 2026-02-10
 
@@ -73,7 +73,9 @@ npx http-server -p 8080
 ## Tính năng
 
 - ✅ Quản lý nhiều sessions chat
-- ✅ Tự động đồng bộ sessions từ backend
+- ✅ Tự động đồng bộ sessions từ backend khi khởi động
+- ✅ Tự động load session gần nhất khi vào trang
+- ✅ Tự động tạo session khi gửi tin nhắn đầu tiên (không cần tạo thủ công)
 - ✅ Tải lịch sử chat từ backend khi chuyển session
 - ✅ Lưu trữ lịch sử chat trong localStorage (cache)
 - ✅ Giao diện người dùng hiện đại, responsive
@@ -175,10 +177,12 @@ app.use((req, res, next) => {
 ## Session Management
 
 ### Cách hoạt động
-1. **Local Sessions**: Frontend quản lý sessions trong localStorage
-2. **Backend Sessions**: Backend lưu messages trong SQLite database
-3. **Sync**: Frontend tự động tải sessions từ backend khi khởi động
-4. **History**: Khi chuyển session, frontend tải lịch sử từ backend
+1. **Auto-load từ backend**: Khi khởi động, frontend tự động tải tất cả sessions từ backend
+2. **Auto-select session gần nhất**: Tự động chọn session cuối cùng (gần nhất) để tiếp tục
+3. **Auto-create on first message**: Nếu chưa có session nào, tự động tạo khi gửi tin nhắn đầu tiên
+4. **Backend Sessions**: Backend lưu messages trong SQLite database
+5. **Sync**: Frontend cache sessions trong localStorage để tải nhanh hơn
+6. **History**: Khi chuyển session, frontend tải lịch sử từ backend
 
 ### Session Naming
 - Sử dụng tên có ý nghĩa: `user-alice`, `project-xyz`
@@ -247,6 +251,14 @@ const API_CONFIG = {
 - ✅ Mobile browsers (iOS Safari, Chrome Mobile)
 
 ## Changelog
+
+### Version 2.0.1 (2026-02-10)
+- 🎯 Auto-load session gần nhất khi khởi động (không còn alert bắt tạo session)
+- 🎯 Tự động tạo session khi gửi tin nhắn đầu tiên
+- 🐛 Fixed undefined session bug
+- 🐛 Fixed delete button not working
+- ✨ Better error handling and validation
+- ✨ Improved user experience - no manual session creation needed
 
 ### Version 2.0.0 (2026-02-10)
 - **BREAKING:** Updated to API v2.0.0 - simplified session management

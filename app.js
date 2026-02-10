@@ -115,10 +115,22 @@ async function sendMessage() {
     const message = inputEl.value.trim();
     if (!message) return;
 
-    const currentSession = getCurrentSession();
+    let currentSession = getCurrentSession();
+
+    // If no active session, create one automatically
     if (!currentSession) {
-        addMessage('error', 'No active session');
-        return;
+        const sessionId = `session-${Date.now()}`;
+        const newSession = {
+            id: sessionId,
+            name: sessionId,
+            messages: [],
+            createdAt: new Date().toISOString()
+        };
+        sessions.push(newSession);
+        localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+        setCurrentSessionId(sessionId);
+        renderSessions();
+        currentSession = newSession;
     }
 
     // Add user message to UI
@@ -181,14 +193,14 @@ async function checkHealth() {
     try {
         const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.health}`);
         if (!response.ok) {
-            addMessage('error', 'API server is not responding');
+            console.error('API server is not responding');
             return;
         }
 
         // Load registered sessions from backend
         await loadRegisteredSessions();
     } catch (err) {
-        addMessage('error', 'Cannot connect to API server');
+        console.error('Cannot connect to API server:', err);
     }
 }
 
@@ -272,27 +284,35 @@ async function loadChatHistory(sessionId) {
 }
 
 // Initialize
-checkHealth();
-renderSessions();
+async function initialize() {
+    // Load sessions from backend first
+    await checkHealth();
 
-// Clean up any undefined current session
-const currentId = getCurrentSessionId();
-if (!currentId || currentId === 'undefined' || currentId === 'null') {
-    localStorage.removeItem('nanobot_current_session');
-}
+    renderSessions();
 
-// If no sessions exist, create a default one
-if (sessions.length === 0) {
-    createNewSession();
-} else {
-    // Load the current session's history from backend
-    const validCurrentId = getCurrentSessionId();
-    if (validCurrentId && validCurrentId !== 'undefined' && validCurrentId !== 'null') {
-        loadChatHistory(validCurrentId);
-    } else if (sessions.length > 0) {
-        // Switch to first available session
-        switchToSession(sessions[0].id);
+    // Clean up any undefined current session
+    const currentId = getCurrentSessionId();
+    if (!currentId || currentId === 'undefined' || currentId === 'null') {
+        localStorage.removeItem('nanobot_current_session');
     }
+
+    // Try to load sessions from backend or local storage
+    if (sessions.length === 0) {
+        // Show welcome message, don't force user to create session
+        messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
+    } else {
+        // Load the current session or switch to most recent one
+        const validCurrentId = getCurrentSessionId();
+        if (validCurrentId && validCurrentId !== 'undefined' && validCurrentId !== 'null') {
+            loadChatHistory(validCurrentId);
+        } else {
+            // Switch to the most recent session (last in array)
+            const mostRecentSession = sessions[sessions.length - 1];
+            switchToSession(mostRecentSession.id);
+        }
+    }
+
+    inputEl.focus();
 }
 
-inputEl.focus();
+initialize();
