@@ -11,12 +11,39 @@ const statusEl = document.getElementById('status');
 const sessionsListDiv = document.getElementById('sessionsList');
 
 // Session Management
-function createNewSession() {
+async function createNewSession() {
     const sessionName = prompt('Enter session name (alphanumeric + hyphens only):', `session-${Date.now()}`);
     if (!sessionName) return;
 
     // Sanitize session name
     const sanitizedName = sessionName.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+
+    try {
+        // Register session with backend
+        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.sessions}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                sessionId: sanitizedName,
+                name: sessionName
+            })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            console.log('Session registered:', data);
+        } else if (response.status === 409) {
+            // Session already exists, that's ok
+            console.log('Session already exists in backend');
+        } else {
+            console.error('Failed to register session:', await response.text());
+        }
+    } catch (err) {
+        console.error('Failed to register session with backend:', err);
+        // Continue anyway, will auto-register on first message
+    }
 
     const newSession = {
         id: sanitizedName,
@@ -287,6 +314,7 @@ async function loadChatHistory(sessionId) {
 async function initialize() {
     // Load sessions from backend first
     await checkHealth();
+    await loadSessionsFromBackend();
 
     renderSessions();
 
@@ -313,6 +341,56 @@ async function initialize() {
     }
 
     inputEl.focus();
+}
+
+// Load sessions from backend API
+async function loadSessionsFromBackend() {
+    try {
+        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.sessions}`);
+        if (!response.ok) {
+            console.error('Failed to load sessions from backend');
+            return;
+        }
+
+        const data = await response.json();
+        if (data.sessions && Array.isArray(data.sessions)) {
+            // Merge backend sessions with local sessions
+            const backendSessions = data.sessions.map(s => ({
+                id: s.folder,
+                name: s.name,
+                messages: [],
+                createdAt: new Date().toISOString()
+            }));
+
+            // Create a map of existing local sessions
+            const localSessionsMap = new Map(sessions.map(s => [s.id, s]));
+
+            // Merge: keep local messages, add new backend sessions
+            const mergedSessions = backendSessions.map(backendSession => {
+                const localSession = localSessionsMap.get(backendSession.id);
+                if (localSession) {
+                    // Keep local session with its messages
+                    return localSession;
+                } else {
+                    // Add new backend session
+                    return backendSession;
+                }
+            });
+
+            // Add any local-only sessions that aren't in backend
+            sessions.forEach(localSession => {
+                if (!backendSessions.find(s => s.id === localSession.id)) {
+                    mergedSessions.push(localSession);
+                }
+            });
+
+            sessions = mergedSessions;
+            localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+            console.log('Loaded sessions from backend:', sessions.length);
+        }
+    } catch (err) {
+        console.error('Failed to load sessions from backend:', err);
+    }
 }
 
 initialize();

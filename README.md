@@ -28,7 +28,7 @@ Mở file `config.js` và thay đổi `baseUrl` để trỏ đến backend của
 
 ```javascript
 const API_CONFIG = {
-    baseUrl: 'http://localhost:3000',  // Đổi thành URL backend của bạn
+    baseUrl: 'http://192.168.6.14:3000',  // Đổi thành URL backend của bạn
     endpoints: {
         message: '/api/message',
         health: '/api/health',
@@ -45,7 +45,7 @@ const API_CONFIG = {
 cd /home/qv/projects/fe_nanobot
 ./start.sh
 ```
-Sau đó mở trình duyệt: `http://localhost:8080`
+Sau đó mở trình duyệt: `http://192.168.6.14:8080`
 
 #### Cách 2: Mở trực tiếp file HTML
 ```bash
@@ -62,7 +62,7 @@ google-chrome index.html
 cd /home/qv/projects/fe_nanobot
 python3 -m http.server 8080
 ```
-Sau đó mở trình duyệt: `http://localhost:8080`
+Sau đó mở trình duyệt: `http://192.168.6.14:8080`
 
 #### Cách 4: Sử dụng Node.js http-server
 ```bash
@@ -217,7 +217,7 @@ const API_CONFIG = {
 ## Troubleshooting
 
 ### Cannot connect to API server
-- Kiểm tra backend có đang chạy không: `curl http://localhost:3000/api/health`
+- Kiểm tra backend có đang chạy không: `curl http://192.168.6.14:3000/api/health`
 - Kiểm tra URL trong `config.js` có đúng không
 - Kiểm tra CORS configuration của backend
 
