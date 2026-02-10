@@ -1,4 +1,9 @@
 let sessions = JSON.parse(localStorage.getItem('nanobot_sessions') || '[]');
+
+// Clean up invalid sessions
+sessions = sessions.filter(s => s.id && s.id !== 'undefined' && s.id !== 'null');
+localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+
 const messagesDiv = document.getElementById('messages');
 const inputEl = document.getElementById('input');
 const sendBtn = document.getElementById('sendBtn');
@@ -28,27 +33,9 @@ function createNewSession() {
 }
 
 function deleteSession(sessionIdToDelete, event) {
-    event.stopPropagation();
-
-    const session = sessions.find(s => s.id === sessionIdToDelete);
-    if (!session) return;
-
-    if (!confirm(`Delete "${session.name}"?`)) return;
-
-    sessions = sessions.filter(s => s.id !== sessionIdToDelete);
-    localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
-
-    // If deleting current session, switch to first available or create new
-    if (getCurrentSessionId() === sessionIdToDelete) {
-        if (sessions.length > 0) {
-            switchToSession(sessions[0].id);
-        } else {
-            localStorage.removeItem('nanobot_current_session');
-            messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
-        }
-    }
-
-    renderSessions();
+    // This function is deprecated, use deleteSessionById instead
+    if (event) event.stopPropagation();
+    deleteSessionById(sessionIdToDelete);
 }
 
 function switchToSession(sessionIdToSwitch) {
@@ -87,12 +74,41 @@ function saveMessageToSession(type, content) {
 
 function renderSessions() {
     const currentId = getCurrentSessionId();
-    sessionsListDiv.innerHTML = sessions.map(session => `
-        <div class="session-item ${session.id === currentId ? 'active' : ''}" onclick="switchToSession('${session.id}')">
-            <div class="session-name">${session.name}</div>
-            <button class="delete-session-btn" onclick="deleteSession('${session.id}', event)">×</button>
-        </div>
-    `).join('');
+    sessionsListDiv.innerHTML = sessions.map(session => {
+        const sessionName = session.name || session.id || 'Unnamed';
+        const sessionId = session.id || '';
+        const isActive = session.id === currentId;
+
+        return `
+            <div class="session-item ${isActive ? 'active' : ''}" onclick="switchToSession('${sessionId}')">
+                <div class="session-name">${sessionName}</div>
+                <button class="delete-session-btn" onclick="event.stopPropagation(); deleteSessionById('${sessionId}')">×</button>
+            </div>
+        `;
+    }).join('');
+}
+
+// Helper function for deleting session (called from HTML onclick)
+function deleteSessionById(sessionId) {
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+
+    if (!confirm(`Delete "${session.name || sessionId}"?`)) return;
+
+    sessions = sessions.filter(s => s.id !== sessionId);
+    localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+
+    // If deleting current session, switch to first available or create new
+    if (getCurrentSessionId() === sessionId) {
+        if (sessions.length > 0) {
+            switchToSession(sessions[0].id);
+        } else {
+            localStorage.removeItem('nanobot_current_session');
+            messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
+        }
+    }
+
+    renderSessions();
 }
 
 async function sendMessage() {
@@ -186,6 +202,11 @@ async function loadRegisteredSessions() {
         if (data.sessions && data.sessions.length > 0) {
             // Merge backend sessions with local sessions
             data.sessions.forEach(backendSession => {
+                // Skip if sessionId is invalid
+                if (!backendSession.sessionId || backendSession.sessionId === 'undefined') {
+                    return;
+                }
+
                 const existingSession = sessions.find(s => s.id === backendSession.sessionId);
                 if (!existingSession) {
                     sessions.push({
@@ -207,14 +228,23 @@ async function loadRegisteredSessions() {
 
 // Load chat history from backend
 async function loadChatHistory(sessionId) {
+    if (!sessionId) {
+        messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
+        return;
+    }
+
     try {
-        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.history}?sessionId=${sessionId}`);
-        if (!response.ok) return;
+        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.history}?sessionId=${encodeURIComponent(sessionId)}`);
+        if (!response.ok) {
+            messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
+            return;
+        }
 
         const data = await response.json();
-        if (data.messages && data.messages.length > 0) {
-            const session = sessions.find(s => s.id === sessionId);
-            if (session) {
+        const session = sessions.find(s => s.id === sessionId);
+
+        if (session) {
+            if (data.messages && data.messages.length > 0) {
                 // Clear local messages and load from backend
                 session.messages = data.messages.map(msg => ({
                     type: msg.sender === 'user' ? 'user' : 'assistant',
@@ -228,10 +258,16 @@ async function loadChatHistory(sessionId) {
                 session.messages.forEach(msg => {
                     addMessage(msg.type, msg.content, false);
                 });
+            } else {
+                // No messages in backend, show welcome message
+                messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
+                session.messages = [];
+                localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
             }
         }
     } catch (err) {
         console.error('Failed to load chat history:', err);
+        messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
     }
 }
 
@@ -239,14 +275,23 @@ async function loadChatHistory(sessionId) {
 checkHealth();
 renderSessions();
 
+// Clean up any undefined current session
+const currentId = getCurrentSessionId();
+if (!currentId || currentId === 'undefined' || currentId === 'null') {
+    localStorage.removeItem('nanobot_current_session');
+}
+
 // If no sessions exist, create a default one
 if (sessions.length === 0) {
     createNewSession();
 } else {
     // Load the current session's history from backend
-    const currentId = getCurrentSessionId();
-    if (currentId) {
-        loadChatHistory(currentId);
+    const validCurrentId = getCurrentSessionId();
+    if (validCurrentId && validCurrentId !== 'undefined' && validCurrentId !== 'null') {
+        loadChatHistory(validCurrentId);
+    } else if (sessions.length > 0) {
+        // Switch to first available session
+        switchToSession(sessions[0].id);
     }
 }
 
