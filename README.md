@@ -4,9 +4,22 @@ Frontend độc lập cho NanoBot - Personal Claude Assistant
 
 ## Phiên bản
 
-**Frontend Version:** 2.0.1
-**API Version:** 2.0.0
-**Last Updated:** 2026-02-10
+**Frontend Version:** 3.0.0
+**Backend API Version:** 3.0.0 (Per-Session Pool Architecture)
+**Last Updated:** 2026-02-11
+
+## Backend Architecture Update
+
+Backend hiện sử dụng **Per-Session Persistent Pools**:
+- ✅ Mỗi session có containers riêng (perfect isolation)
+- ✅ 1 agent per session (persistent, no cold start)
+- ✅ Auto-cleanup sau 3 phút idle
+- ✅ Max 10 concurrent sessions
+
+**Performance:**
+- First request: ~7-8s (spawn pool + warm agents)
+- Subsequent requests: ~5-6s (agents already warm)
+- No cold start trong cùng session
 
 ## Cấu trúc
 
@@ -84,7 +97,7 @@ npx http-server -p 8080
 
 ## API Endpoints
 
-Backend cần cung cấp các endpoints sau (API Version 2.0.0):
+Backend cung cấp các endpoints sau (API Version 3.0.0):
 
 ### POST /api/message
 Gửi tin nhắn đến NanoBot assistant.
@@ -100,18 +113,31 @@ Gửi tin nhắn đến NanoBot assistant.
 **Response:**
 ```json
 {
-    "reply": "Assistant's response"
+    "reply": "Assistant's response",
+    "_debug": {
+        "timings": {
+            "validation": 0,
+            "using_pool": 1,
+            "container_agent": 5824,
+            "total": 5850
+        }
+    }
 }
 ```
 
+**Session ID Requirements:**
+- Alphanumeric + underscore/hyphen only (`^[a-zA-Z0-9_-]+$`)
+- Max 100 characters
+- No path traversal (`../`, `/`, `\` not allowed)
+
 ### GET /api/health
-Health check endpoint để kiểm tra backend đang hoạt động.
+Health check endpoint.
 
 **Response:**
 ```json
 {
     "status": "ok",
-    "timestamp": "2026-02-10T00:00:00.000Z"
+    "timestamp": "2026-02-11T09:00:00.000Z"
 }
 ```
 
@@ -124,6 +150,91 @@ Lấy lịch sử chat của một session.
     "messages": [
         {
             "id": "msg-123",
+            "chat_jid": "alice",
+            "sender": "user",
+            "content": "Hello",
+            "timestamp": "2026-02-11T09:00:00.000Z"
+        },
+        {
+            "id": "msg-124",
+            "chat_jid": "alice",
+            "sender": "assistant",
+            "content": "Hi! How can I help?",
+            "timestamp": "2026-02-11T09:00:05.000Z"
+        }
+    ]
+}
+```
+
+### GET /api/sessions
+Lấy danh sách tất cả sessions.
+
+**Response:**
+```json
+{
+    "sessions": [
+        {
+            "name": "Alice's Session",
+            "folder": "alice"
+        },
+        {
+            "name": "Bob's Session",
+            "folder": "bob"
+        }
+    ]
+}
+```
+
+### POST /api/sessions
+Đăng ký session mới (thường không cần vì auto-register).
+
+**Request:**
+```json
+{
+    "sessionId": "new-session",
+    "name": "New Session Name"
+}
+```
+
+### DELETE /api/sessions/:sessionId
+Xóa session và toàn bộ data.
+
+**Response:**
+```json
+{
+    "success": true,
+    "sessionId": "deleted-session"
+}
+```
+
+### GET /api/pool/stats
+Lấy thống kê per-session agent pools.
+
+**Response:**
+```json
+{
+    "activeSessions": 3,
+    "maxSessions": 10,
+    "poolSizePerSession": 1,
+    "idleTimeout": 180000,
+    "totalAgents": 3,
+    "sessions": [
+        {
+            "sessionId": "alice",
+            "poolSize": 1,
+            "agents": [
+                {
+                    "id": "alice-agent-1",
+                    "busy": false,
+                    "requestCount": 15,
+                    "errorCount": 0
+                }
+            ],
+            "lastUsed": "2026-02-11T09:15:30.000Z"
+        }
+    ]
+}
+```
             "chat_jid": "user-session-id",
             "sender": "user",
             "content": "Hello",

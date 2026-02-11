@@ -1,8 +1,8 @@
-let sessions = JSON.parse(localStorage.getItem('nanobot_sessions') || '[]');
+let sessions = [];
 
-// Clean up invalid sessions
-sessions = sessions.filter(s => s.id && s.id !== 'undefined' && s.id !== 'null');
-localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+// Clean up invalid sessions - No longer needed as we load fresh from backend
+// sessions = sessions.filter(s => s.id && s.id !== 'undefined' && s.id !== 'null');
+// localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
 
 const messagesDiv = document.getElementById('messages');
 const inputEl = document.getElementById('input');
@@ -53,7 +53,7 @@ async function createNewSession() {
     };
 
     sessions.push(newSession);
-    localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+    // REMOVED: localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
 
     renderSessions();
     switchToSession(newSession.id);
@@ -95,7 +95,7 @@ function saveMessageToSession(type, content) {
     const currentSession = getCurrentSession();
     if (currentSession) {
         currentSession.messages.push({ type, content });
-        localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+        // REMOVED: localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
     }
 }
 
@@ -116,14 +116,34 @@ function renderSessions() {
 }
 
 // Helper function for deleting session (called from HTML onclick)
-function deleteSessionById(sessionId) {
+async function deleteSessionById(sessionId) {
     const session = sessions.find(s => s.id === sessionId);
     if (!session) return;
 
     if (!confirm(`Delete "${session.name || sessionId}"?`)) return;
 
+    // Delete from backend first
+    try {
+        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.sessions}/${encodeURIComponent(sessionId)}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok && response.status !== 404) {
+            console.error('Failed to delete session from backend:', await response.text());
+            alert('Failed to delete session from backend. Please try again.');
+            return;
+        }
+
+        console.log('Session deleted from backend:', sessionId);
+    } catch (err) {
+        console.error('Failed to delete session from backend:', err);
+        alert('Network error. Failed to delete session from backend.');
+        return;
+    }
+
+    // Remove from local memory only (not persistent storage)
     sessions = sessions.filter(s => s.id !== sessionId);
-    localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+    // REMOVED: localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
 
     // If deleting current session, switch to first available or create new
     if (getCurrentSessionId() === sessionId) {
@@ -154,7 +174,7 @@ async function sendMessage() {
             createdAt: new Date().toISOString()
         };
         sessions.push(newSession);
-        localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+        // REMOVED: localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
         setCurrentSessionId(sessionId);
         renderSessions();
         currentSession = newSession;
@@ -180,6 +200,10 @@ async function sendMessage() {
         const data = await response.json();
 
         if (response.ok) {
+            // Log performance metrics
+            if (data._debug && data._debug.timings) {
+                console.log(`⚡ Request completed in ${data._debug.timings.total}ms`, data._debug.timings);
+            }
             addMessage('assistant', data.reply);
         } else {
             addMessage('error', `Error: ${data.error || 'Unknown error'}`);
@@ -215,7 +239,7 @@ function hideStatus() {
     statusEl.style.display = 'none';
 }
 
-// Check API health and load registered sessions
+// Check API health
 async function checkHealth() {
     try {
         const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.health}`);
@@ -223,47 +247,13 @@ async function checkHealth() {
             console.error('API server is not responding');
             return;
         }
-
-        // Load registered sessions from backend
-        await loadRegisteredSessions();
     } catch (err) {
         console.error('Cannot connect to API server:', err);
     }
 }
 
-// Load registered sessions from backend
-async function loadRegisteredSessions() {
-    try {
-        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.sessions}`);
-        if (!response.ok) return;
-
-        const data = await response.json();
-        if (data.sessions && data.sessions.length > 0) {
-            // Merge backend sessions with local sessions
-            data.sessions.forEach(backendSession => {
-                // Skip if sessionId is invalid
-                if (!backendSession.sessionId || backendSession.sessionId === 'undefined') {
-                    return;
-                }
-
-                const existingSession = sessions.find(s => s.id === backendSession.sessionId);
-                if (!existingSession) {
-                    sessions.push({
-                        id: backendSession.sessionId,
-                        name: backendSession.sessionId,
-                        messages: [],
-                        createdAt: backendSession.lastActivity,
-                        messageCount: backendSession.messageCount
-                    });
-                }
-            });
-            localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
-            renderSessions();
-        }
-    } catch (err) {
-        console.error('Failed to load registered sessions:', err);
-    }
-}
+// Load registered sessions from backend (Deprecated/Removed duplicate function)
+// was: async function loadRegisteredSessions() ...
 
 // Load chat history from backend
 async function loadChatHistory(sessionId) {
@@ -273,7 +263,8 @@ async function loadChatHistory(sessionId) {
     }
 
     try {
-        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.history}?sessionId=${encodeURIComponent(sessionId)}`);
+        // Add timestamp to prevent browser caching
+        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.history}?sessionId=${encodeURIComponent(sessionId)}&_t=${Date.now()}`);
         if (!response.ok) {
             messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
             return;
@@ -284,24 +275,24 @@ async function loadChatHistory(sessionId) {
 
         if (session) {
             if (data.messages && data.messages.length > 0) {
-                // Clear local messages and load from backend
+                // Load from backend
                 session.messages = data.messages.map(msg => ({
                     type: msg.sender === 'user' ? 'user' : 'assistant',
                     content: msg.content,
                     timestamp: msg.timestamp
                 }));
-                localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+                // REMOVED: localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
 
                 // Refresh messages display
                 messagesDiv.innerHTML = '';
                 session.messages.forEach(msg => {
-                    addMessage(msg.type, msg.content, false);
+                    addMessage(msg.type, msg.content, false); // false = don't save to session again
                 });
             } else {
                 // No messages in backend, show welcome message
                 messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
                 session.messages = [];
-                localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+                // REMOVED: localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
             }
         }
     } catch (err) {
@@ -312,7 +303,10 @@ async function loadChatHistory(sessionId) {
 
 // Initialize
 async function initialize() {
-    // Load sessions from backend first
+    // CLEANUP: Force remove old local storage data to ensure no caching
+    localStorage.removeItem('nanobot_sessions');
+
+    // Load sessions from backend
     await checkHealth();
     await loadSessionsFromBackend();
 
@@ -324,14 +318,16 @@ async function initialize() {
         localStorage.removeItem('nanobot_current_session');
     }
 
-    // Try to load sessions from backend or local storage
+    // Determine which session to switch to
     if (sessions.length === 0) {
         // Show welcome message, don't force user to create session
         messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
     } else {
         // Load the current session or switch to most recent one
         const validCurrentId = getCurrentSessionId();
-        if (validCurrentId && validCurrentId !== 'undefined' && validCurrentId !== 'null') {
+        const sessionExists = sessions.find(s => s.id === validCurrentId);
+
+        if (validCurrentId && validCurrentId !== 'undefined' && validCurrentId !== 'null' && sessionExists) {
             loadChatHistory(validCurrentId);
         } else {
             // Switch to the most recent session (last in array)
@@ -346,7 +342,8 @@ async function initialize() {
 // Load sessions from backend API
 async function loadSessionsFromBackend() {
     try {
-        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.sessions}`);
+        // Add timestamp to prevent browser caching
+        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.sessions}?_t=${Date.now()}`);
         if (!response.ok) {
             console.error('Failed to load sessions from backend');
             return;
@@ -354,38 +351,15 @@ async function loadSessionsFromBackend() {
 
         const data = await response.json();
         if (data.sessions && Array.isArray(data.sessions)) {
-            // Merge backend sessions with local sessions
-            const backendSessions = data.sessions.map(s => ({
-                id: s.folder,
+            // Map backend sessions directly
+            sessions = data.sessions.map(s => ({
+                id: s.id || s.folder, // Handle both new (id) and old (folder) API formats
                 name: s.name,
-                messages: [],
-                createdAt: new Date().toISOString()
+                messages: [], // We'll load messages when switching to the session
+                createdAt: s.createdAt || new Date().toISOString()
             }));
 
-            // Create a map of existing local sessions
-            const localSessionsMap = new Map(sessions.map(s => [s.id, s]));
-
-            // Merge: keep local messages, add new backend sessions
-            const mergedSessions = backendSessions.map(backendSession => {
-                const localSession = localSessionsMap.get(backendSession.id);
-                if (localSession) {
-                    // Keep local session with its messages
-                    return localSession;
-                } else {
-                    // Add new backend session
-                    return backendSession;
-                }
-            });
-
-            // Add any local-only sessions that aren't in backend
-            sessions.forEach(localSession => {
-                if (!backendSessions.find(s => s.id === localSession.id)) {
-                    mergedSessions.push(localSession);
-                }
-            });
-
-            sessions = mergedSessions;
-            localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+            // No longer merging with local storage or saving to it
             console.log('Loaded sessions from backend:', sessions.length);
         }
     } catch (err) {

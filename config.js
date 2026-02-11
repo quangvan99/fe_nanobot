@@ -9,6 +9,7 @@ const API_CONFIG = {
         message: '/api/message',
         health: '/api/health',
         history: '/api/history',
-        sessions: '/api/sessions'
+        sessions: '/api/sessions',
+        poolStats: '/api/pool/stats'  // Pool statistics
     }
 };
