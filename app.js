@@ -1,5 +1,131 @@
 let sessions = [];
 
+// Toast Notification System
+function showToast(type, title, message, duration = 5000) {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+
+    const icons = {
+        success: '✓',
+        error: '✕',
+        warning: '⚠',
+        info: 'ℹ'
+    };
+
+    toast.innerHTML = `
+        <div class="toast-icon">${icons[type] || 'ℹ'}</div>
+        <div class="toast-content">
+            <div class="toast-title">${title}</div>
+            ${message ? `<div class="toast-message">${message}</div>` : ''}
+        </div>
+        <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
+    `;
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.3s ease-in forwards';
+        setTimeout(() => toast.remove(), 300);
+    }, duration);
+}
+
+// Modal Dialog System
+let modalResolve = null;
+
+function showModal(title, message, options = {}) {
+    return new Promise((resolve) => {
+        modalResolve = resolve;
+
+        const overlay = document.getElementById('modalOverlay');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalInput = document.getElementById('modalInput');
+        const confirmBtn = document.getElementById('modalConfirmBtn');
+        const cancelBtn = document.getElementById('modalCancelBtn');
+
+        modalTitle.textContent = title;
+        modalMessage.textContent = message;
+
+        // Handle input field
+        if (options.input) {
+            modalInput.style.display = 'block';
+            modalInput.value = options.defaultValue || '';
+            modalInput.placeholder = options.placeholder || '';
+            setTimeout(() => modalInput.focus(), 100);
+        } else {
+            modalInput.style.display = 'none';
+        }
+
+        // Configure buttons
+        if (options.confirmText) confirmBtn.textContent = options.confirmText;
+        else confirmBtn.textContent = 'Confirm';
+
+        if (options.cancelText) cancelBtn.textContent = options.cancelText;
+        else cancelBtn.textContent = 'Cancel';
+
+        // Apply danger style if needed
+        if (options.danger) {
+            confirmBtn.className = 'modal-btn modal-btn-danger';
+        } else {
+            confirmBtn.className = 'modal-btn modal-btn-primary';
+        }
+
+        // Show/hide cancel button
+        if (options.showCancel === false) {
+            cancelBtn.style.display = 'none';
+        } else {
+            cancelBtn.style.display = 'block';
+        }
+
+        overlay.classList.add('active');
+    });
+}
+
+function closeModal() {
+    const overlay = document.getElementById('modalOverlay');
+    const modalInput = document.getElementById('modalInput');
+    overlay.classList.remove('active');
+    if (modalResolve) {
+        modalResolve(null);
+        modalResolve = null;
+    }
+    modalInput.value = '';
+}
+
+function confirmModal() {
+    const overlay = document.getElementById('modalOverlay');
+    const modalInput = document.getElementById('modalInput');
+    overlay.classList.remove('active');
+
+    if (modalResolve) {
+        const inputValue = modalInput.style.display === 'none' ? true : modalInput.value;
+        modalResolve(inputValue);
+        modalResolve = null;
+    }
+    modalInput.value = '';
+}
+
+// Close modal when clicking overlay
+document.addEventListener('DOMContentLoaded', () => {
+    const overlay = document.getElementById('modalOverlay');
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            closeModal();
+        }
+    });
+
+    // Handle Enter key in modal input
+    const modalInput = document.getElementById('modalInput');
+    modalInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            confirmModal();
+        } else if (e.key === 'Escape') {
+            closeModal();
+        }
+    });
+});
+
 // Clean up invalid sessions - No longer needed as we load fresh from backend
 // sessions = sessions.filter(s => s.id && s.id !== 'undefined' && s.id !== 'null');
 // localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
@@ -12,7 +138,18 @@ const sessionsListDiv = document.getElementById('sessionsList');
 
 // Session Management
 async function createNewSession() {
-    const sessionName = prompt('Enter session name (alphanumeric + hyphens only):', `session-${Date.now()}`);
+    const sessionName = await showModal(
+        'Create New Session',
+        'Enter session name (alphanumeric + hyphens only):',
+        {
+            input: true,
+            defaultValue: `session-${Date.now()}`,
+            placeholder: 'session-name',
+            confirmText: 'Create',
+            cancelText: 'Cancel'
+        }
+    );
+
     if (!sessionName) return;
 
     // Sanitize session name
@@ -34,14 +171,18 @@ async function createNewSession() {
         if (response.ok) {
             const data = await response.json();
             console.log('Session registered:', data);
+            showToast('success', 'Session Created', `Created session "${sessionName}"`);
         } else if (response.status === 409) {
             // Session already exists, that's ok
             console.log('Session already exists in backend');
+            showToast('info', 'Session Exists', 'Session already exists in backend');
         } else {
             console.error('Failed to register session:', await response.text());
+            showToast('error', 'Registration Failed', 'Failed to register session');
         }
     } catch (err) {
         console.error('Failed to register session with backend:', err);
+        showToast('warning', 'Network Error', 'Failed to register with backend, will auto-register on first message');
         // Continue anyway, will auto-register on first message
     }
 
@@ -120,7 +261,17 @@ async function deleteSessionById(sessionId) {
     const session = sessions.find(s => s.id === sessionId);
     if (!session) return;
 
-    if (!confirm(`Delete "${session.name || sessionId}"?`)) return;
+    const confirmed = await showModal(
+        'Delete Session',
+        `Delete session "${session.name || sessionId}"?\n\nThis will delete:\n- Chat history from database\n- Session folder on server\n- All associated data`,
+        {
+            danger: true,
+            confirmText: 'Delete',
+            cancelText: 'Cancel'
+        }
+    );
+
+    if (!confirmed) return;
 
     // Delete from backend first
     try {
@@ -130,20 +281,30 @@ async function deleteSessionById(sessionId) {
 
         if (!response.ok && response.status !== 404) {
             console.error('Failed to delete session from backend:', await response.text());
-            alert('Failed to delete session from backend. Please try again.');
+            showToast('error', 'Delete Failed', 'Failed to delete session from backend. Please try again.');
             return;
         }
 
-        console.log('Session deleted from backend:', sessionId);
+        const data = await response.json();
+        console.log('Session deleted from backend:', data);
+
+        // Show what was deleted
+        if (data.success) {
+            const details = [];
+            if (data.deletedMessages) details.push('chat history');
+            if (data.deletedFromRegistry) details.push('registration');
+            if (data.deletedFolder) details.push('folder');
+            console.log(`✓ Deleted: ${details.join(', ')}`);
+            showToast('success', 'Session Deleted', `Successfully deleted ${details.join(', ')}`);
+        }
     } catch (err) {
         console.error('Failed to delete session from backend:', err);
-        alert('Network error. Failed to delete session from backend.');
+        showToast('error', 'Network Error', 'Failed to delete session from backend.');
         return;
     }
 
     // Remove from local memory only (not persistent storage)
     sessions = sessions.filter(s => s.id !== sessionId);
-    // REMOVED: localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
 
     // If deleting current session, switch to first available or create new
     if (getCurrentSessionId() === sessionId) {
@@ -156,6 +317,78 @@ async function deleteSessionById(sessionId) {
     }
 
     renderSessions();
+}
+
+// Delete all sessions
+async function deleteAllSessions() {
+    if (sessions.length === 0) {
+        showToast('info', 'No Sessions', 'No sessions to delete');
+        return;
+    }
+
+    const confirmed = await showModal(
+        '⚠️ Delete All Sessions',
+        `Delete ALL ${sessions.length} sessions?\n\nThis will permanently delete:\n- All chat histories\n- All session folders\n- All associated data\n\nThis action cannot be undone!`,
+        {
+            danger: true,
+            confirmText: 'Delete All',
+            cancelText: 'Cancel'
+        }
+    );
+
+    if (!confirmed) return;
+
+    // Double confirmation for safety
+    const doubleConfirm = await showModal(
+        'Final Confirmation',
+        `Are you absolutely sure?\n\nYou are about to delete ${sessions.length} sessions.`,
+        {
+            danger: true,
+            confirmText: 'Yes, Delete All',
+            cancelText: 'Cancel'
+        }
+    );
+
+    if (!doubleConfirm) return;
+
+    showStatus('Deleting all sessions...');
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Delete each session
+    for (const session of sessions) {
+        try {
+            const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.sessions}/${encodeURIComponent(session.id)}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok || response.status === 404) {
+                successCount++;
+            } else {
+                failCount++;
+                console.error(`Failed to delete ${session.id}:`, await response.text());
+            }
+        } catch (err) {
+            failCount++;
+            console.error(`Error deleting ${session.id}:`, err);
+        }
+    }
+
+    hideStatus();
+
+    // Clear local state
+    sessions = [];
+    localStorage.removeItem('nanobot_current_session');
+    messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
+    renderSessions();
+
+    // Show result
+    if (failCount === 0) {
+        showToast('success', 'All Sessions Deleted', `Successfully deleted all ${successCount} sessions!`);
+    } else {
+        showToast('warning', 'Partial Success', `Deleted ${successCount} sessions. ${failCount} sessions failed to delete.`);
+    }
 }
 
 async function sendMessage() {
@@ -265,39 +498,50 @@ async function loadChatHistory(sessionId) {
     try {
         // Add timestamp to prevent browser caching
         const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.history}?sessionId=${encodeURIComponent(sessionId)}&_t=${Date.now()}`);
+
         if (!response.ok) {
-            messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
+            console.error('Failed to load history:', response.status, response.statusText);
+            messagesDiv.innerHTML = `<div class="message error">Failed to load history. Server returned ${response.status}</div>`;
             return;
         }
 
         const data = await response.json();
-        const session = sessions.find(s => s.id === sessionId);
 
-        if (session) {
-            if (data.messages && data.messages.length > 0) {
-                // Load from backend
-                session.messages = data.messages.map(msg => ({
-                    type: msg.sender === 'user' ? 'user' : 'assistant',
-                    content: msg.content,
-                    timestamp: msg.timestamp
-                }));
-                // REMOVED: localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
+        // Find session or create a temporary one if not found in list (robustness)
+        let session = sessions.find(s => s.id === sessionId);
+        if (!session) {
+            console.warn(`Session ${sessionId} not found in local list, creating temporary entry`);
+            session = {
+                id: sessionId,
+                name: sessionId,
+                messages: [],
+                createdAt: new Date().toISOString()
+            };
+            sessions.push(session);
+        }
 
-                // Refresh messages display
-                messagesDiv.innerHTML = '';
-                session.messages.forEach(msg => {
-                    addMessage(msg.type, msg.content, false); // false = don't save to session again
-                });
-            } else {
-                // No messages in backend, show welcome message
-                messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
-                session.messages = [];
-                // REMOVED: localStorage.setItem('nanobot_sessions', JSON.stringify(sessions));
-            }
+        if (data.messages && data.messages.length > 0) {
+            // Load from backend
+            session.messages = data.messages.map(msg => ({
+                type: msg.sender === 'user' ? 'user' : 'assistant',
+                content: msg.content,
+                timestamp: msg.timestamp
+            }));
+
+            // Refresh messages display
+            messagesDiv.innerHTML = '';
+            session.messages.forEach(msg => {
+                addMessage(msg.type, msg.content, false); // false = don't save to session again
+            });
+        } else {
+            // No messages in backend
+            console.log(`No messages found for session ${sessionId}`);
+            messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
+            session.messages = [];
         }
     } catch (err) {
         console.error('Failed to load chat history:', err);
-        messagesDiv.innerHTML = '<div class="message assistant">Hi! I\'m your NanoBot assistant. How can I help you today?</div>';
+        messagesDiv.innerHTML = `<div class="message error">Network error loading history: ${err.message}. Check console for details.</div>`;
     }
 }
 
